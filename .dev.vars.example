@@ -1,0 +1,20 @@
+# 环境变量示例
+# 复制为 .dev.vars（本地开发）或在 Cloudflare 控制台 / wrangler secret put 配置（生产）
+#
+# ⚠️ 仓库中不包含任何真实密钥值。以下全部为占位符。
+
+# ---- 必填（通过 wrangler.toml 的绑定配置，不需要写在这里）----
+# DB       D1 数据库绑定
+# ASSETS   静态资源绑定
+
+# ---- 可选 ----
+# 运行环境标识，仅用于日志与 /api/health 展示
+ENVIRONMENT=production
+
+# 抓取时使用的 User-Agent。留空则使用内置的 PageRadarBot/1.0
+# USER_AGENT=PageRadarBot/1.0 (+https://example.com; change detection)
+
+# 邮件通知服务密钥。
+# 未配置时，勾选「邮件通知」的监控会在 notifications 表里记录「未配置」，
+# 不会假装发送成功，也不会阻塞主流程。
+# EMAIL_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxx

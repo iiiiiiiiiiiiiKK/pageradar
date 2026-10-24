@@ -1,0 +1,60 @@
+# 设置说明：
+#   1. 仓库 Settings → Secrets and variables → Actions 添加：
+#        CLOUDFLARE_API_TOKEN   （需要 Workers Scripts:Edit、D1:Edit 权限）
+#        CLOUDFLARE_ACCOUNT_ID
+#   2. 首次部署前先在本地跑一次 `wrangler d1 create pageradar-db` 并填好 wrangler.toml
+#
+# 本仓库的线上实例是用本地 wrangler 部署的（见 docs/VERIFICATION.md），
+# 这个 workflow 供使用者自动化自己的部署。
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - 'migrations/**'
+      - 'wrangler.toml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Apply D1 migrations
+        run: pnpm exec wrangler d1 migrations apply pageradar-db --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy Worker
+        run: pnpm exec wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

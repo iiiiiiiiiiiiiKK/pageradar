@@ -1,0 +1,29 @@
+name = "pageradar"
+main = "src/worker/index.ts"
+compatibility_date = "2025-03-01"
+compatibility_flags = ["nodejs_compat"]
+
+# 前端静态资源（Vite 构建产物）。Worker 内的 env.ASSETS.fetch 直接服务它们，
+# 因此前端与 API 同域，没有跨域、没有额外域名。
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[observability]
+enabled = true
+
+[vars]
+ENVIRONMENT = "production"
+
+# 定时任务：每 5 分钟检查一次到期监控。
+# 真正的执行频率由每个监控的 interval_minutes 与 next_check_at 决定。
+[triggers]
+crons = ["*/5 * * * *"]
+
+# D1 数据库绑定（ID 由 `wrangler d1 create pageradar-db` 生成后填入）
+[[d1_databases]]
+binding = "DB"
+database_name = "pageradar-db"
+database_id = "818a890a-13a8-447b-9d46-562f3002c0cb"
+migrations_dir = "migrations"

@@ -1,0 +1,10 @@
+﻿name = "pageradar-demo"
+main = "index.js"
+compatibility_date = "2025-03-01"
+
+# 独立部署的"会变化的网页"，用于端到端验证定时抓取与差异检测。
+# 与主 Worker 分开部署是必要的：Worker 通过自己的路由访问自己会形成子请求递归
+# （Cloudflare 返回 522），所以演示页必须是一个独立的脚本与独立域名。
+
+[observability]
+enabled = true
