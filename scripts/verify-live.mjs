@@ -253,13 +253,14 @@ let m404 = null;
 
 /* 21. 真实内容变化检测（对自有页面直接改内容） */
 {
-  // 用 demo 的 5 分钟槽位：等下一槽位变化会太慢，所以用一个每次请求都返回不同
-  // 正文的自托管端点来验证「变化 → 快照 → 差异」链路。
-  // /slow 的响应体是固定文本，不能用；因此改用 query 触发 demo 的不同正文。
-  // demo 页正文依赖分钟槽位，故这里直接构造：先抓一次，等 1 秒，再抓，
-  // 用「关键词规则命中状态」与「历史长度」判断链路完整性（变化本身由 cron 长测覆盖）。
-  const d0 = await call(`/api/monitors/${monitorId}`);
-  record('监控状态包含最近检查与下次检查时间', !!d0.body?.monitor?.lastCheckAt && !!d0.body?.monitor?.nextCheckAt, `last=${new Date(d0.body.monitor.lastCheckAt).toISOString()} next=${new Date(d0.body.monitor.nextCheckAt).toISOString()}`);
+  // 校验「最近检查 / 下次计划」字段确实被写入（用已检查过的静态页监控）
+  const d0 = await call(`/api/monitors/${staticId}`);
+  const m = d0.body?.monitor;
+  record(
+    '监控状态包含最近检查与下次检查时间',
+    !!m?.lastCheckAt && !!m?.nextCheckAt && m.nextCheckAt > Date.now(),
+    `last=${m?.lastCheckAt ? new Date(m.lastCheckAt).toISOString() : 'null'} next=${m?.nextCheckAt ? new Date(m.nextCheckAt).toISOString() : 'null'}`,
+  );
 }
 
 /* 22. 暂停 / 恢复 / 编辑 */
