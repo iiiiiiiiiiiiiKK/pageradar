@@ -76,3 +76,7 @@ export class RateLimiter {
 
 export const apiLimiter = new RateLimiter(120, 60_000);
 export const createLimiter = new RateLimiter(10, 60_000);
+/** 用已有令牌重新进入工作区的尝试次数（防令牌枚举）。 */
+export const sessionLimiter = new RateLimiter(20, 60_000);
+/** 加载演示数据的次数（演示数据本身也占真实配额）。 */
+export const demoLimiter = new RateLimiter(6, 60_000);

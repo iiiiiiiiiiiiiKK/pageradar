@@ -6,11 +6,13 @@
  *  - 每个 handler 都从认证上下文拿 workspaceId，绝不从请求体读取
  *  - 所有输入都过 validate 函数，长度与枚举值都限死
  */
-import { apiLimiter, createLimiter, extractBearer, generateToken, sha256Hex } from './auth/auth.ts';
+import { apiLimiter, createLimiter, demoLimiter, sessionLimiter, extractBearer, generateToken, sha256Hex } from './auth/auth.ts';
 import {
   acquireLease,
   buildQuota,
+  countDemoMonitors,
   countMonitors,
+  deleteDemoMonitors,
   deleteMonitor,
   dueMonitors,
   findMonitorByUrl,
@@ -25,6 +27,7 @@ import {
   listMonitors,
   listRuns,
   listSnapshots,
+  markOnboarded,
   releaseLease,
   toDiff,
   toMonitor,
@@ -37,13 +40,15 @@ import {
 import { runCheck } from './checks/runner.ts';
 import { checkUrl } from './security/url-guard.ts';
 import { maskWebhook } from './notify/webhook.ts';
+import { DEMO_MONITORS, demoBaseUrl } from './demo/seed.ts';
 import type { Monitor, MonitorDetail } from '../shared/types.ts';
 
 export interface Env {
   DB: D1Database;
   ASSETS?: Fetcher;
   ENVIRONMENT?: string;
-  ALLOW_DEMO_WORKSPACE?: string;
+  /** 演示页的根地址（独立部署的 demo-worker 域名）。可选，未配置时按规则推导。 */
+  DEMO_BASE_URL?: string;
   EMAIL_API_KEY?: string;
   USER_AGENT?: string;
 }
@@ -186,7 +191,44 @@ async function handleApi(req: Request, env: Env, ctx: ExecutionContext, path: st
     const name = `工作区 ${id.slice(0, 6)}`;
     await insertWorkspace(env.DB, { id, name, tokenHash: hash, tokenPrefix: prefix, createdAt: Date.now() });
     // 令牌只在这里返回一次，之后无法再查看明文
-    return json({ token, workspace: { id, name, tokenPrefix: prefix } }, 201);
+    return json(
+      { token, workspace: { id, name, tokenPrefix: prefix, createdAt: Date.now(), onboarded: false } },
+      201,
+    );
+  }
+
+  /**
+   * 用已有令牌「重新进入」工作区。
+   *
+   * 为什么需要这个端点：数据库只存令牌的 SHA-256 哈希，前端无法自己校验令牌是否有效，
+   * 必须让服务端确认一次。同一个令牌就是同一个工作区，不存在「换取新令牌」这回事。
+   * 单独限流，防止被用来暴力枚举令牌。
+   */
+  if (path === '/api/workspace/session' && req.method === 'POST') {
+    const ip = req.headers.get('cf-connecting-ip') ?? 'unknown';
+    const limited = sessionLimiter.check(`session:${ip}`);
+    if (!limited.ok) return err(`尝试次数过多，请在 ${limited.retryAfter} 秒后再试。`, 429, 'rate-limited');
+
+    const body = (await safeJson(req)) as Record<string, unknown>;
+    const raw = typeof body.token === 'string' ? body.token.trim() : '';
+    if (!/^pr_[A-Za-z0-9_-]{20,64}$/.test(raw)) {
+      return err('令牌格式不正确。它应该以 pr_ 开头，后面是一串随机字符。', 422, 'bad-token-format');
+    }
+    const hash = await sha256Hex(raw);
+    const ws = await getWorkspaceByTokenHash(env.DB, hash);
+    if (!ws) {
+      return err('这个令牌不存在或已被删除。请检查是否复制完整（包括开头的 pr_）。', 401, 'invalid-token');
+    }
+    await touchWorkspace(env.DB, ws.id, Date.now());
+    return json({
+      workspace: {
+        id: ws.id,
+        name: ws.name,
+        tokenPrefix: ws.token_prefix,
+        createdAt: ws.created_at,
+        onboarded: !!ws.onboarded_at,
+      },
+    });
   }
 
   /* ---- 需要认证 ---- */
@@ -203,6 +245,101 @@ async function handleApi(req: Request, env: Env, ctx: ExecutionContext, path: st
     const rows = await listMonitors(env.DB, ws.id);
     const quota = await buildQuota(env.DB, ws, Date.now());
     return json({ monitors: rows.map((r) => sanitizeMonitor(toMonitor(r))), quota });
+  }
+
+  /* ---- 演示数据：一次点击创建 3 个带说明的可删监控 ---- */
+
+  if (path === '/api/demo/sample' && req.method === 'GET') {
+    // 让前端可以展示「演示会创建什么」，不需要真的创建
+    return json({
+      demos: DEMO_MONITORS.map((d) => ({
+        name: d.name,
+        url: demoBaseUrl(req.url, env.DEMO_BASE_URL) + d.path,
+        intervalMinutes: d.intervalMinutes,
+        extractRule: d.extractRule,
+        keyword: d.keyword,
+        teaches: d.teaches,
+      })),
+      existing: await countDemoMonitors(env.DB, ws.id),
+    });
+  }
+
+  if (path === '/api/demo/sample' && req.method === 'POST') {
+    const ip = req.headers.get('cf-connecting-ip') ?? 'unknown';
+    const limited = demoLimiter.check(`demo:${ip}`);
+    if (!limited.ok) return err(`操作过于频繁，请 ${limited.retryAfter} 秒后再试。`, 429, 'rate-limited');
+
+    const existing = await countDemoMonitors(env.DB, ws.id);
+    if (existing > 0) {
+      return err(`你已经加载过演示数据了（当前 ${existing} 个）。如需重来，请先点「清除演示数据」。`, 409, 'demo-exists');
+    }
+
+    const total = await countMonitors(env.DB, ws.id);
+    const seeds = DEMO_MONITORS.slice(0, Math.max(0, ws.monitors_limit - total));
+    if (seeds.length === 0) {
+      return err(`监控数量已达上限（${ws.monitors_limit} 个），无法再添加演示数据。请先删除一些监控。`, 409, 'quota-monitors');
+    }
+
+    const base = demoBaseUrl(req.url, env.DEMO_BASE_URL);
+    const now = Date.now();
+    const created: string[] = [];
+
+    for (const seed of seeds) {
+      const target = base + seed.path;
+      const check = checkUrl(target);
+      if (!check.ok || !check.url) {
+        // 演示地址本身也应该过一遍安全校验：如果配置错了要立刻暴露，而不是静默创建
+        return err(`演示数据地址不合法（${target}）：${check.message}`, 500, 'demo-misconfigured');
+      }
+      const normalized = normalizeUrlForDedup(check.url);
+      if (await findMonitorByUrl(env.DB, ws.id, normalized)) continue;
+
+      const id = crypto.randomUUID();
+      await insertMonitor(env.DB, {
+        id,
+        workspace_id: ws.id,
+        name: seed.name,
+        url: check.url.href,
+        url_normalized: normalized,
+        interval_minutes: seed.intervalMinutes,
+        extract_rule: seed.extractRule,
+        keyword: seed.keyword,
+        notify_webhook: null,
+        notify_email: 0,
+        paused: 0,
+        created_at: now,
+        updated_at: now,
+        // 不立刻排期：让用户自己去点「立即检查」，避免一进来就消耗配额
+        next_check_at: now + seed.intervalMinutes * 60_000,
+        last_check_at: null,
+        last_success_at: null,
+        last_error: null,
+        last_status: null,
+        last_change_at: null,
+        last_http_status: null,
+        consecutive_failures: 0,
+        version: 0,
+        retention_days: ws.retention_days,
+        is_demo: 1,
+      });
+      created.push(id);
+    }
+
+    await markOnboarded(env.DB, ws.id, now);
+    return json({ created: created.length, ids: created, demoBase: base }, 201);
+  }
+
+  if (path === '/api/demo/sample' && req.method === 'DELETE') {
+    // 先数再删：D1 的 meta.changes 会把外键级联删除的子行（快照/运行记录）也算进去，
+    // 直接返回 changes 会得到「删了 5 个监控」这种让用户困惑的数字。
+    const before = await countDemoMonitors(env.DB, ws.id);
+    await deleteDemoMonitors(env.DB, ws.id);
+    return json({ removed: before });
+  }
+
+  if (path === '/api/onboarded' && req.method === 'POST') {
+    await markOnboarded(env.DB, ws.id, Date.now());
+    return json({ ok: true });
   }
 
   if (path === '/api/monitors' && req.method === 'POST') {

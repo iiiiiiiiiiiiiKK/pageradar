@@ -21,6 +21,8 @@ export interface Monitor {
   retentionDays: number;
   snapshotCount?: number;
   lastHttpStatus?: number | null;
+  /** 是否为「演示数据」创建的监控（可一键清除，且界面上有明确标记）。 */
+  isDemo?: boolean;
 }
 
 export type LastStatus = 'ok' | 'changed' | 'nochange' | 'first' | 'error' | 'paused';
@@ -81,6 +83,14 @@ export interface ApiError {
   error: string;
   code?: string;
   detail?: string;
+}
+
+export interface WorkspaceInfo {
+  id: string;
+  name: string;
+  tokenPrefix: string;
+  createdAt: number;
+  onboarded: boolean;
 }
 
 export interface MonitorDetail {

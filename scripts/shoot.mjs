@@ -27,6 +27,7 @@ const browser = await chromium.launch();
   console.log('✔ 01-onboarding');
 
   // 2) 创建工作区
+  await page.getByTestId('tab-create').click();
   await page.getByTestId('create-workspace').click();
   await page.getByTestId('new-token').waitFor({ timeout: 30000 });
   const token = (await page.getByTestId('new-token').innerText()).trim();
@@ -34,6 +35,18 @@ const browser = await chromium.launch();
   await page.screenshot({ path: join(shots, '02-workspace-created.png') });
   await page.getByTestId('token-saved').click();
   await page.waitForTimeout(1200);
+
+  // 2b) 演示数据引导横幅 + 加载后的列表（README 用）
+  await page.getByTestId('load-demo').click();
+  await page.getByTestId('demo-active').waitFor({ timeout: 30000 });
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: join(shots, '02b-demo-loaded.png') });
+  console.log('✔ 02b-demo-loaded');
+  // 清掉演示数据，后续截图用真实监控
+  page.once('dialog', (d) => d.accept());
+  await page.getByTestId('clear-demo').click();
+  await page.getByTestId('demo-banner').waitFor({ timeout: 30000 });
+  await page.waitForTimeout(600);
 
   // 3) 添加两个监控：一个会变化，一个静态
   const add = async (name, url) => {

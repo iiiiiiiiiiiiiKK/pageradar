@@ -20,6 +20,8 @@ export interface WorkspaceRow {
   checks_per_day: number;
   snapshots_limit: number;
   retention_days: number;
+  /** 迁移 0002 加入；老数据为 null。 */
+  onboarded_at?: number | null;
 }
 
 export interface MonitorRow {
@@ -46,6 +48,8 @@ export interface MonitorRow {
   consecutive_failures: number;
   version: number;
   retention_days: number;
+  /** 迁移 0002 加入；老数据默认 0。 */
+  is_demo?: number;
 }
 
 export interface SnapshotRow {
@@ -95,6 +99,7 @@ export function toMonitor(row: MonitorRow, snapshotCount?: number): Monitor {
     consecutiveFailures: row.consecutive_failures,
     retentionDays: row.retention_days,
     lastHttpStatus: row.last_http_status,
+    isDemo: row.is_demo === 1,
     ...(snapshotCount !== undefined ? { snapshotCount } : {}),
   };
 }
@@ -197,8 +202,8 @@ export async function insertMonitor(db: D1Database, m: MonitorRow): Promise<void
   await db
     .prepare(
       `INSERT INTO monitors (id, workspace_id, name, url, url_normalized, interval_minutes, extract_rule, keyword, notify_webhook, notify_email,
-        paused, created_at, updated_at, next_check_at, retention_days, version)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
+        paused, created_at, updated_at, next_check_at, retention_days, is_demo, version)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
     )
     .bind(
       m.id,
@@ -216,8 +221,28 @@ export async function insertMonitor(db: D1Database, m: MonitorRow): Promise<void
       m.updated_at,
       m.next_check_at,
       m.retention_days,
+      m.is_demo ?? 0,
     )
     .run();
+}
+
+export async function countDemoMonitors(db: D1Database, workspaceId: string): Promise<number> {
+  const row = await db
+    .prepare('SELECT COUNT(*) AS n FROM monitors WHERE workspace_id = ? AND is_demo = 1')
+    .bind(workspaceId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/** 删除该工作区的全部演示监控（连带快照/差异/运行记录由外键级联）。 */
+export async function deleteDemoMonitors(db: D1Database, workspaceId: string): Promise<number> {
+  const res = await db.prepare('DELETE FROM monitors WHERE workspace_id = ? AND is_demo = 1').bind(workspaceId).run();
+  return res.meta?.changes ?? 0;
+}
+
+/** 标记工作区已看过引导（用于决定是否默认展开新手引导）。 */
+export async function markOnboarded(db: D1Database, workspaceId: string, now: number): Promise<void> {
+  await db.prepare('UPDATE workspaces SET onboarded_at = COALESCE(onboarded_at, ?) WHERE id = ?').bind(now, workspaceId).run();
 }
 
 export async function updateMonitor(

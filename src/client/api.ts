@@ -11,6 +11,8 @@ export interface StoredWorkspace {
   id: string;
   name: string;
   tokenPrefix: string;
+  createdAt?: number;
+  onboarded?: boolean;
 }
 
 export function getToken(): string | null {
@@ -77,6 +79,40 @@ export interface MonitorWithQuota {
 export const api = {
   async createWorkspace(): Promise<{ token: string; workspace: StoredWorkspace }> {
     return request('/api/workspace', { method: 'POST', body: '{}' });
+  },
+  /**
+   * 用已有令牌「重新进入」工作区。
+   *
+   * 为什么必须有这个：数据库只存令牌的 SHA-256 哈希，前端无法自证令牌有效，
+   * 必须让服务端确认一次。同一个令牌 = 同一个工作区，不存在「换新令牌」。
+   */
+  async restoreSession(token: string): Promise<{ workspace: StoredWorkspace }> {
+    const res = await fetch('/api/workspace/session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const text = await res.text();
+    let body: unknown = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = null;
+    }
+    if (!res.ok) {
+      const e = (body ?? {}) as ApiError;
+      throw new ApiRequestError(e.error ?? `请求失败（HTTP ${res.status}）`, res.status, e.code);
+    }
+    return body as { workspace: StoredWorkspace };
+  },
+  async loadDemoData(): Promise<{ created: number; ids: string[]; demoBase: string }> {
+    return request('/api/demo/sample', { method: 'POST', body: '{}' });
+  },
+  async clearDemoData(): Promise<{ removed: number }> {
+    return request('/api/demo/sample', { method: 'DELETE' });
+  },
+  async markOnboarded(): Promise<{ ok: boolean }> {
+    return request('/api/onboarded', { method: 'POST', body: '{}' });
   },
   async ping(): Promise<{ ok: boolean; db: string; version: string }> {
     return request('/api/health');

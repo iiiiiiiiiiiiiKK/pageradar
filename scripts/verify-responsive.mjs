@@ -42,7 +42,8 @@ for (const width of [320, 375, 390, 414, 768, 1024, 1366]) {
   const page = await ctx.newPage();
   await page.goto(BASE + '/', { waitUntil: 'networkidle' });
 
-  // 创建工作区
+  // 创建工作区（落地页现在默认停在「已有令牌」页签，需先切到创建页签）
+  await page.getByTestId('tab-create').click();
   await page.getByTestId('create-workspace').click();
   await page.getByTestId('new-token').waitFor({ timeout: 30000 });
   await page.getByTestId('token-saved').click();

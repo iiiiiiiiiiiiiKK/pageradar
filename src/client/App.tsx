@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, api as apiClient, ApiRequestError, clearSession, getWorkspace, saveSession, type StoredWorkspace } from './api.ts';
 import { MonitorList, MonitorSummary, statusMeta } from './components/MonitorList.tsx';
 import { MonitorFormModal, type MonitorFormValues } from './components/MonitorFormModal.tsx';
@@ -10,6 +10,33 @@ import type { Monitor, MonitorDetail, Quota } from '../shared/types.ts';
 
 const AUTHOR_X = 'https://x.com/0xkillcoin';
 const REPO_URL = 'https://github.com/iiiiiiiiiiiiiKK/pageradar';
+
+/** 把令牌下载成 txt，方便用户存到本机（比只放剪贴板更可靠）。 */
+function downloadToken(token: string): void {
+  const ws = getWorkspace();
+  const body = [
+    'PageRadar 访问令牌',
+    '==================',
+    '',
+    token,
+    '',
+    '用途：在 PageRadar 首页选择「已有令牌，进入工作区」，粘贴上面这串即可回到你的工作区。',
+    `工作区：${ws?.name ?? '（未知）'}（${ws?.tokenPrefix ?? ''}…）`,
+    `导出时间：${new Date().toISOString()}`,
+    '',
+    '请注意：这等价于密码，不要发给别人，也不要提交到公开仓库。',
+    '如果丢失，我们无法帮你找回（服务端只保存哈希）。',
+  ].join('\n');
+  const blob = new Blob([body], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pageradar-token-${(ws?.tokenPrefix ?? 'workspace').replace(/[^\w-]/g, '')}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 type Tab = 'overview' | 'diff' | 'history';
 
@@ -33,6 +60,16 @@ export default function App() {
   const [creating, setCreating] = useState(false);
   const [theme, setTheme] = useState<'system' | 'light' | 'dark'>('system');
   const [toasts, setToasts] = useState<Array<{ id: string; text: string; tone: string }>>([]);
+
+  /* 进入方式：已有令牌 / 新建工作区 */
+  const [entryTab, setEntryTab] = useState<'restore' | 'create'>('restore');
+  const [tokenInput, setTokenInput] = useState('');
+  const [tokenError, setTokenError] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
+
+  /* 演示数据 */
+  const [demoBusy, setDemoBusy] = useState(false);
+  const demoCount = monitors.filter((m) => m.isDemo).length;
 
   const toast = (text: string, tone = 'info') => {
     const id = crypto.randomUUID();
@@ -210,12 +247,88 @@ export default function App() {
   };
 
   const leave = () => {
-    if (!window.confirm('清除本地保存的访问令牌？如果令牌未另行保存，将无法再访问这个工作区。')) return;
+    if (!window.confirm('退出工作区会清除本地保存的访问令牌。\n\n如果你还没把令牌存到别处，退出后就无法再进入这个工作区了。要继续吗？')) return;
     clearSession();
     setWs(null);
     setDetail(null);
     setMonitors([]);
     setNewToken(null);
+    setEntryTab('restore');
+    setTokenInput('');
+    setTokenError(null);
+  };
+
+  /** 用已有令牌重新进入工作区。 */
+  const restoreSession = async () => {
+    const token = tokenInput.trim();
+    if (!token) return;
+    setRestoring(true);
+    setTokenError(null);
+    try {
+      const r = await apiClient.restoreSession(token);
+      saveSession(token, r.workspace);
+      setWs(r.workspace);
+      setTokenInput('');
+      await loadList();
+      toast('已回到你的工作区', 'ok');
+    } catch (e) {
+      setTokenError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  /** 加载演示数据：创建 3 个带说明的演示监控，用户可以照着改成自己的。 */
+  const loadDemo = async () => {
+    setDemoBusy(true);
+    try {
+      const r = await api.loadDemoData();
+      await loadList();
+      toast(
+        r.created > 0
+          ? `已创建 ${r.created} 个演示监控。建议先点第一个，再点「立即检查」看看效果。`
+          : '演示监控已存在，无需重复创建。',
+        r.created > 0 ? 'ok' : 'info',
+      );
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), 'error');
+    } finally {
+      setDemoBusy(false);
+    }
+  };
+
+  const clearDemo = async () => {
+    if (!window.confirm('清除全部演示监控及其快照？你自己添加的监控不受影响。')) return;
+    setDemoBusy(true);
+    try {
+      const r = await api.clearDemoData();
+      await loadList();
+      toast(`已清除 ${r.removed} 个演示监控`, 'ok');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), 'error');
+    } finally {
+      setDemoBusy(false);
+    }
+  };
+
+  /** 令牌帮助：解释去哪里找令牌，以及丢了怎么办。 */
+  const showTokenHint = () => {
+    window.alert(
+      [
+        '令牌在哪里？',
+        '',
+        '① 创建或进入工作区后，在「监控总览」右上角点「令牌在哪？」——这里只是帮助，不是令牌本身。',
+        '② 令牌明文只在两个地方出现过：创建工作区时的提示面板，以及你自己复制/下载保存的文件。',
+        '③ 如果你当时点了「下载为 txt」，它会保存在浏览器的下载文件夹里，文件名以 pageradar-token- 开头。',
+        '④ 令牌也保存在当前浏览器的 localStorage 里，所以同一浏览器下次打开会自动进入，不需要手动粘贴。',
+        '',
+        '如果我彻底找不到令牌了怎么办？',
+        '服务端只保存令牌的哈希，无法还原、无法重置、没有找回入口——这是「无账号体系」的必然代价。',
+        '你可以新建一个工作区重新开始；旧数据仍然留在数据库里，但没有任何人能再访问它。',
+        '',
+        `当前工作区：${ws?.name ?? ''}（${ws?.tokenPrefix ?? ''}…）`,
+      ].join('\n'),
+    );
   };
 
   const timeline = useMemo(() => (detail ? buildTimeline(detail.history, detail.runs) : []), [detail]);
@@ -267,10 +380,10 @@ export default function App() {
 
         {newToken && (
           <section className="onboard" data-testid="token-panel" style={{ marginTop: 18 }}>
-            <h2>这是你的访问令牌，只显示这一次</h2>
+            <h2>先保存这串令牌，否则你以后进不来</h2>
             <p>
-              令牌等价于这个工作区的密码。服务端只保存了它的哈希，无法再还原明文，
-              所以请现在复制保存；关掉这个提示后就看不到了。
+              它等价于这个工作区的密码。服务端只保存了它的哈希，<strong>无法再还原明文、也无法重置</strong>。
+              退出工作区或换设备时，就是靠它重新进入。
             </p>
             <div className="token-reveal">
               <strong>访问令牌</strong>
@@ -282,20 +395,25 @@ export default function App() {
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(newToken);
-                    toast('令牌已复制到剪贴板', 'ok');
+                    toast('已复制到剪贴板，建议粘贴到密码管理器或备忘录', 'ok');
                   } catch {
                     toast('浏览器拒绝了剪贴板访问，请手动选中并复制。', 'error');
                   }
                 }}
+                data-testid="copy-token"
               >
                 复制令牌
+              </button>
+              <button className="btn" onClick={() => void downloadToken(newToken)} data-testid="download-token">
+                下载为 txt
               </button>
               <button className="btn" onClick={() => setNewToken(null)} data-testid="token-saved">
                 我已保存，进入工作区
               </button>
             </div>
             <p style={{ marginTop: 14, fontSize: 12.5, color: 'var(--faint)' }}>
-              令牌同时也保存在当前浏览器的 localStorage 中，方便下次继续使用。清除浏览器数据后需要用令牌重新进入。
+              令牌同时也保存在当前浏览器的 localStorage 中，同一浏览器下次打开可直接进入。
+              但清除浏览器数据后就需要手动粘贴令牌了 —— 所以别只依赖浏览器。
             </p>
           </section>
         )}
@@ -311,29 +429,112 @@ export default function App() {
             </section>
 
             <section className="onboard">
-              <h2>创建你的工作区</h2>
-              <p>不需要邮箱和密码。点一下就会生成一个高熵访问令牌，令牌就是你的凭据。</p>
-              <ol className="onboard-steps">
-                <li>
-                  点击下方按钮，服务端生成 <strong>256 位随机令牌</strong>（只存哈希，明文只显示一次）
-                </li>
-                <li>把令牌保存在安全的地方，它等价于这个工作区的密码</li>
-                <li>添加公开网页，设置检查间隔与内容提取规则</li>
-                <li>之后每次内容变化都会留下快照与差异，可选 Webhook 通知</li>
-              </ol>
-              <button className="btn btn--primary" onClick={createWorkspace} disabled={creating} data-testid="create-workspace">
-                {creating ? <span className="spinner" /> : <IconPlus />}
-                {creating ? '创建中…' : '创建工作区'}
-              </button>
+              <div className="entry-tabs" role="tablist" aria-label="进入方式">
+                <button
+                  role="tab"
+                  aria-selected={entryTab === 'restore'}
+                  className={entryTab === 'restore' ? 'is-on' : ''}
+                  onClick={() => setEntryTab('restore')}
+                  data-testid="tab-restore"
+                >
+                  已有令牌，进入工作区
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={entryTab === 'create'}
+                  className={entryTab === 'create' ? 'is-on' : ''}
+                  onClick={() => setEntryTab('create')}
+                  data-testid="tab-create"
+                >
+                  创建新工作区
+                </button>
+              </div>
 
-              {newToken && (
-                <div className="token-reveal">
-                  <strong>令牌只显示这一次</strong>，请立刻复制保存：<code data-testid="new-token">{newToken}</code>
+              {entryTab === 'restore' ? (
+                <div style={{ marginTop: 16 }}>
+                  <h2>用令牌重新进入</h2>
+                  <p>
+                    上次创建或退出工作区时，系统给过你一串以 <code>pr_</code> 开头的令牌。
+                    粘贴到下面就能回到原来的工作区——数据都还在，是同一个地方。
+                  </p>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void restoreSession();
+                    }}
+                    style={{ marginTop: 14 }}
+                  >
+                    <div className="field">
+                      <label htmlFor="f-token">访问令牌</label>
+                      <input
+                        id="f-token"
+                        type="text"
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder="pr_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                        value={tokenInput}
+                        onChange={(e) => setTokenInput(e.target.value)}
+                        data-testid="token-input"
+                      />
+                      <span className="hint">
+                        令牌就是你唯一的凭据，我们不存明文，所以没有办法「找回」或「重置」。
+                        如果彻底丢了，只能新建工作区（旧数据会留在数据库里但无法再访问）。
+                      </span>
+                    </div>
+                    {tokenError && (
+                      <div className="alert alert--error" style={{ marginTop: 10 }} role="alert" data-testid="token-error">
+                        <IconAlert />
+                        <div>{tokenError}</div>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+                      <button
+                        type="submit"
+                        className="btn btn--primary"
+                        disabled={restoring || tokenInput.trim() === ''}
+                        data-testid="restore-session"
+                      >
+                        {restoring ? <span className="spinner" /> : <IconLink />}
+                        {restoring ? '验证中…' : '进入工作区'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        onClick={() => {
+                          setEntryTab('create');
+                          setTokenError(null);
+                        }}
+                      >
+                        我没有令牌
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                <div style={{ marginTop: 16 }}>
+                  <h2>创建你的工作区</h2>
+                  <p>
+                    不需要邮箱和密码。点一下就会生成一个 256 位随机令牌，令牌就是你的凭据。
+                    <strong> 请务必先复制保存</strong>，因为它只显示一次。
+                  </p>
+                  <ol className="onboard-steps">
+                    <li>
+                      点击下方按钮，服务端生成 <strong>256 位随机令牌</strong>（库里只存哈希）
+                    </li>
+                    <li>
+                      把令牌存到密码管理器或文本文件里 —— 之后靠它「进入工作区」
+                    </li>
+                    <li>可以选择「加载演示数据」，先看懂差异长什么样，再换自己的网址</li>
+                  </ol>
+                  <button className="btn btn--primary" onClick={createWorkspace} disabled={creating} data-testid="create-workspace">
+                    {creating ? <span className="spinner" /> : <IconPlus />}
+                    {creating ? '创建中…' : '创建工作区'}
+                  </button>
                 </div>
               )}
 
               <p style={{ marginTop: 16, fontSize: 12.5, color: 'var(--faint)' }}>
-                使用前请阅读我们的合理使用说明：只监控你有权访问的公开页面，尊重 robots.txt 与网站条款，
+                使用前请阅读合理使用说明：只监控你有权访问的公开页面，尊重 robots.txt 与网站条款，
                 不用于绕过登录、付费墙或验证码。本站不存储任何目标网站的登录凭据。
               </p>
             </section>
@@ -348,16 +549,48 @@ export default function App() {
                 <span className="badge badge--idle" title={ws.name}>
                   工作区 {ws.tokenPrefix}…
                 </span>
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <button className="btn btn--sm" onClick={loadList} title="刷新列表">
                     <IconRefresh /> 刷新
                   </button>
-                  <button className="btn btn--sm btn--ghost" onClick={leave}>
+                  <button className="btn btn--sm btn--ghost" onClick={showTokenHint} title="我该在哪里找到令牌？">
+                    令牌在哪？
+                  </button>
+                  <button className="btn btn--sm btn--ghost" onClick={leave} data-testid="leave-workspace">
                     退出工作区
                   </button>
                 </div>
               </div>
             </section>
+
+            {/* 演示数据引导：只在还没加载过演示时有意义 */}
+            {demoCount === 0 && monitors.length <= 1 && (
+              <section className="demo-banner" data-testid="demo-banner">
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <div className="demo-banner-title">第一次用？先加载演示数据看看效果</div>
+                  <p>
+                    会建 3 个可以直接交互的演示监控（库存价格页、30 秒翻转页、永不变化页），
+                    每个都配好了「内容提取规则」和「关键词规则」示例。你照着改网址就能用。
+                  </p>
+                </div>
+                <button className="btn btn--primary" onClick={loadDemo} disabled={demoBusy} data-testid="load-demo">
+                  {demoBusy ? <span className="spinner" /> : <IconPlus />}
+                  {demoBusy ? '创建中…' : '加载演示数据'}
+                </button>
+              </section>
+            )}
+
+            {demoCount > 0 && (
+              <section className="demo-banner demo-banner--active" data-testid="demo-active">
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <div className="demo-banner-title">当前有 {demoCount} 个演示监控</div>
+                  <p>演示监控名称以「演示 ·」开头。看完就可以清除，不影响你自己添加的监控。</p>
+                </div>
+                <button className="btn btn--sm" onClick={clearDemo} disabled={demoBusy} data-testid="clear-demo">
+                  <IconTrash /> 清除演示数据
+                </button>
+              </section>
+            )}
 
             <div className="workspace">
               <MonitorList

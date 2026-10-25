@@ -177,6 +177,41 @@ code, kbd { font-family: var(--mono); font-size: 0.87em; background: var(--bg-co
 }
 .token-reveal code { display: block; margin-top: 6px; padding: 8px; word-break: break-all; background: var(--bg-elev); user-select: all; }
 
+/* 进入方式切换 */
+.entry-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin: 0 -4px; }
+.entry-tabs button {
+  border: none; background: none; padding: 9px 12px; font-size: 13.5px; font-weight: 600;
+  color: var(--faint); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap;
+}
+.entry-tabs button.is-on { color: var(--text); border-bottom-color: var(--accent); }
+
+/* 演示数据横幅 */
+.demo-banner {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 13px 16px; margin-bottom: 14px;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent-soft) 55%, var(--bg-elev));
+}
+.demo-banner--active {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  background: var(--accent-soft);
+}
+.demo-banner-title { font-size: 13.5px; font-weight: 650; margin-bottom: 3px; }
+.demo-banner p { font-size: 12.5px; color: var(--muted); margin: 0; max-width: 62ch; }
+@media (max-width: 640px) {
+  .demo-banner { padding: 12px; }
+  .demo-banner > .btn { width: 100%; }
+}
+
+/* 演示监控在列表里的标记 */
+.demo-chip {
+  display: inline-flex; align-items: center; padding: 0 5px; border-radius: 4px;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .03em;
+  background: var(--accent-soft); color: var(--accent-text);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
 /* ---------- buttons ---------- */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;

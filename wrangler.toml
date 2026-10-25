@@ -15,6 +15,9 @@ enabled = true
 
 [vars]
 ENVIRONMENT = "production"
+# 演示页根地址（独立部署的 demo-worker）。
+# 主 Worker 抓自己域名会形成子请求递归、被 Cloudflare 拒绝（522），所以演示页必须独立部署。
+DEMO_BASE_URL = "https://demo-pageradar.852367856.dpdns.org"
 
 # 定时任务：每 5 分钟检查一次到期监控。
 # 真正的执行频率由每个监控的 interval_minutes 与 next_check_at 决定。

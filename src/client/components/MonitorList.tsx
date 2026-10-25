@@ -67,6 +67,7 @@ export function MonitorList({
                 <span className="mon-item-title">
                   <span className={`status-dot ${st.dot}`} aria-hidden />
                   <span>{m.name}</span>
+                  {m.isDemo && <span className="demo-chip">演示</span>}
                 </span>
                 <span className="mon-item-url" title={m.url}>
                   {hostOf(m.url)}
