@@ -11,7 +11,7 @@
 <img src="https://img.shields.io/badge/TypeScript-5.9-3178c6?style=flat-square" alt="TypeScript" />
 <img src="https://img.shields.io/badge/React-19-61dafb?style=flat-square" alt="React" />
 <img src="https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-f38020?style=flat-square" alt="Cloudflare" />
-<img src="https://img.shields.io/badge/tests-73%20unit%20%2B%20125%20live-2ea043?style=flat-square" alt="tests" />
+<img src="https://img.shields.io/badge/tests-73%20unit%20%2B%20145%20live-2ea043?style=flat-square" alt="tests" />
 
 [**在线体验**](https://pageradar.852367856.dpdns.org/) · [架构](#-架构) · [安全模型](#-安全模型) · [数据库结构](#-数据库结构) · [部署指南](#-部署指南)
 
