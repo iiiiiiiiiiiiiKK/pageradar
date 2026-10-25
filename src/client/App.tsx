@@ -5,7 +5,7 @@ import { MonitorFormModal, type MonitorFormValues } from './components/MonitorFo
 import { DiffView } from './components/DiffView.tsx';
 import { Timeline, buildTimeline } from './components/Timeline.tsx';
 import { IconAlert, IconCheck, IconClock, IconEdit, IconGithub, IconLink, IconMoon, IconPause, IconPlay, IconPlus, IconRadar, IconRefresh, IconSun, IconTrash, IconX } from './icons.tsx';
-import { formatIn, formatTime, intervalLabel } from './format.ts';
+import { formatIn, formatTime, hostOf, intervalLabel, pathOf } from './format.ts';
 import type { Monitor, MonitorDetail, Quota } from '../shared/types.ts';
 
 const AUTHOR_X = 'https://x.com/0xkillcoin';
@@ -543,21 +543,38 @@ export default function App() {
 
         {ws && (
           <>
-            <section className="hero" style={{ paddingBottom: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <h1 style={{ fontSize: 20 }}>监控总览</h1>
-                <span className="badge badge--idle" title={ws.name}>
-                  工作区 {ws.tokenPrefix}…
+            <section className="overview-bar" style={{ paddingBottom: 14 }}>
+              <div className="overview-bar-inner">
+                <h1 className="overview-title">
+                  <span className="only-narrow">总览</span>
+                  <span className="only-wide">监控总览</span>
+                </h1>
+                <span className="badge badge--idle overview-ws" title={ws.name}>
+                  工作区<span className="only-wide"> {ws.tokenPrefix}…</span>
                 </span>
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <button className="btn btn--sm" onClick={loadList} title="刷新列表">
-                    <IconRefresh /> 刷新
+                <div className="overview-actions">
+                  <button className="btn btn--sm" onClick={loadList} title="刷新列表" aria-label="刷新列表">
+                    <IconRefresh />
+                    <span>刷新</span>
                   </button>
-                  <button className="btn btn--sm btn--ghost" onClick={showTokenHint} title="我该在哪里找到令牌？">
-                    令牌在哪？
+                  <button
+                    className="btn btn--sm btn--ghost"
+                    onClick={showTokenHint}
+                    title="我该在哪里找到令牌？"
+                    aria-label="令牌帮助"
+                  >
+                    <span className="only-wide">令牌在哪？</span>
+                    <span className="only-narrow">令牌</span>
                   </button>
-                  <button className="btn btn--sm btn--ghost" onClick={leave} data-testid="leave-workspace">
-                    退出工作区
+                  <button
+                    className="btn btn--sm btn--ghost"
+                    onClick={leave}
+                    data-testid="leave-workspace"
+                    title="退出工作区"
+                    aria-label="退出工作区"
+                  >
+                    <span className="only-wide">退出工作区</span>
+                    <span className="only-narrow">退出</span>
                   </button>
                 </div>
               </div>
@@ -642,10 +659,18 @@ export default function App() {
                   <>
                     <section className="panel" data-testid="monitor-detail">
                       <div className="detail-head">
-                        <div style={{ minWidth: 0, flex: 1 }}>
+                        <div className="detail-head-main">
                           <div className="detail-title">{detail.monitor.name}</div>
-                          <a className="detail-url" href={detail.monitor.url} target="_blank" rel="noreferrer noopener">
-                            {detail.monitor.url}
+                          <a
+                            className="detail-url"
+                            href={detail.monitor.url}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                            title={detail.monitor.url}
+                          >
+                            <IconLink className="detail-url-icon" />
+                            <span className="detail-url-host">{hostOf(detail.monitor.url)}</span>
+                            <span className="detail-url-path">{pathOf(detail.monitor.url) || '/'}</span>
                           </a>
                         </div>
                         <div className="detail-actions">
@@ -877,19 +902,33 @@ export default function App() {
         )}
       </main>
 
-      <footer className="footer container">
-        <span>PageRadar · 服务端定时网页变化监控</span>
-        <span>·</span>
-        <span>Cloudflare Workers · D1 · Cron Triggers</span>
-        <span>·</span>
-        <a href={REPO_URL} target="_blank" rel="noreferrer noopener">
-          源码与已知限制
-        </a>
-        <span>·</span>
-        <a href={AUTHOR_X} target="_blank" rel="noreferrer noopener">
-          作者 𝕏 @0xkillcoin
-        </a>
-        <span style={{ marginLeft: 'auto' }}>尊重 robots.txt · 不绕过访问控制</span>
+      <footer className="footer">
+        <div className="container footer-inner">
+          <div className="footer-row">
+            <span className="footer-brand">
+              <IconRadar className="footer-mark" />
+              PageRadar
+            </span>
+            <span className="footer-tag">服务端定时网页变化监控</span>
+          </div>
+          <div className="footer-row footer-row--meta">
+            <span className="footer-chip">Cloudflare Workers</span>
+            <span className="footer-chip">D1</span>
+            <span className="footer-chip">Cron Triggers</span>
+            <span className="footer-note">尊重 robots.txt · 不绕过访问控制</span>
+          </div>
+          <div className="footer-row footer-row--links">
+            <a href={REPO_URL} target="_blank" rel="noreferrer noopener">
+              源码与已知限制
+            </a>
+            <span className="footer-sep" aria-hidden>
+              /
+            </span>
+            <a href={AUTHOR_X} target="_blank" rel="noreferrer noopener">
+              作者 𝕏 @0xkillcoin
+            </a>
+          </div>
+        </div>
       </footer>
 
       <MonitorFormModal

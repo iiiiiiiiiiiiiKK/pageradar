@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 # 📡 PageRadar
 
@@ -11,7 +11,7 @@
 <img src="https://img.shields.io/badge/TypeScript-5.9-3178c6?style=flat-square" alt="TypeScript" />
 <img src="https://img.shields.io/badge/React-19-61dafb?style=flat-square" alt="React" />
 <img src="https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-f38020?style=flat-square" alt="Cloudflare" />
-<img src="https://img.shields.io/badge/tests-73%20unit%20%2B%2081%20live-2ea043?style=flat-square" alt="tests" />
+<img src="https://img.shields.io/badge/tests-73%20unit%20%2B%20125%20live-2ea043?style=flat-square" alt="tests" />
 
 [**在线体验**](https://pageradar.852367856.dpdns.org/) · [架构](#-架构) · [安全模型](#-安全模型) · [数据库结构](#-数据库结构) · [部署指南](#-部署指南)
 
@@ -733,6 +733,49 @@ node scripts/verify-responsive.mjs
 > 不是真机 WebKit。布局断点、横向溢出、触控目标尺寸这些几何性质可以可靠验证；
 > 但 Safari 特有的 CSS 行为（`backdrop-filter` 性能、旧版 `color-mix()` 支持）未覆盖。
 > 这两个特性即使不生效也只是**视觉降级**（毛玻璃变纯色），不影响任何功能。
+
+### 移动端布局专项验证（44 项，全部通过）
+
+用户反馈过三个移动端排版问题，逐个修好后做了几何断言（不是"看着还行"，而是量出来的）：
+
+```bash
+node scripts/verify-layout.mjs
+```
+
+在 **320 / 375 / 390 / 430px** 四个宽度下，对三处布局逐项测量：
+
+| 问题 | 修法 | 断言 |
+| :--- | :--- | :--- |
+| 总览栏按钮换行成两行 | 窄屏把文案压缩成「总览 · 工作区 · 刷新 · 令牌 · 退出」，用 `.only-wide` / `.only-narrow` 双份文案切换 | 按钮 `top` 坐标去重后必须只有 **1 行**，整栏高度 ≤ 44px |
+| 详情区网址挤成左侧窄条 | 改成 `图标 + 主机名(醒目) + 路径(弱化)` 的 flex 行，`overflow: hidden` + `text-overflow: ellipsis` 单行截断 | 网址容器宽度必须 **≥ 父容器宽度**，高度 ≤ 22px，主机名与路径同一行 |
+| 页脚散落「·」分隔符 | 重构成三行：品牌行 / 技术栈 chip 行 / 链接行；分隔符改成 `/` 且只在链接行内 | `.footer-row` 数量 = 3 且三行 `top` 坐标互不相同 |
+
+实测输出（摘录 iPhone 390）：
+
+```
+✔ [iPhone 13 390] 总览栏按钮排成一行（不换行） — 1 行 · 刷新 | 令牌 | 退出
+✔ [iPhone 13 390] 总览栏高度紧凑（单行） — 28px（按钮跨度 28px）
+✔ [iPhone 13 390] 网址区撑满可用宽度（不挤成左侧窄条） — 338 / 338
+✔ [iPhone 13 390] 网址单行显示（高度 ≤ 22px） — 18px
+✔ [iPhone 13 390] 主机名与路径在同一行
+✔ [iPhone 13 390] 详情区无横向溢出 — 390 <= 390
+✔ [iPhone 13 390] 页脚分成 3 个语义行 — 3 行
+✔ [iPhone 13 390] 页脚各行垂直分列（不是挤在一行里换行） — 1554 / 1582 / 1632
+
+44/44 passed（4 个宽度 × 11 项）
+```
+
+各宽度下的实际文案（测完直接打印出来核对）：
+
+| 宽度 | 总览栏一行内容 |
+| :--- | :--- |
+| 320px | `总览` · `刷新` `令牌` `退出` |
+| 375 / 390 / 430px | `总览` · `工作区` · `刷新` `令牌` `退出` |
+| ≥621px | `监控总览` · `工作区 pr_xxx…` · `刷新` `令牌在哪？` `退出工作区` |
+
+| 总览栏（390px） | 详情区网址（390px） | 页脚（390px） |
+| :---: | :---: | :---: |
+| ![总览栏](docs/screenshots/22-mobile-overview-bar.png) | ![网址](docs/screenshots/23-mobile-detail-url.png) | ![页脚](docs/screenshots/24-mobile-footer.png) |
 
 ---
 
